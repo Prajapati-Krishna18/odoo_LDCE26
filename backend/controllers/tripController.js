@@ -1,5 +1,6 @@
 import { PrismaClient } from '@prisma/client';
 import crypto from 'crypto';
+import fs from 'fs';
 
 const prisma = new PrismaClient();
 
@@ -44,7 +45,7 @@ export const createTrip = async (req, res) => {
         coverImage: defaultCover,
         tripType: tripType || 'Solo',
         travelStyle: travelStyle || 'Relaxation',
-        budget: parseFloat(budget),
+        budget: parseFloat(budget) || 0.0,
         status,
         members: {
           create: {
@@ -61,6 +62,11 @@ export const createTrip = async (req, res) => {
     res.status(201).json(trip);
   } catch (error) {
     console.error('Create Trip Error:', error);
+    try {
+      fs.appendFileSync('c:/Users/Dhruva/Desktop/GlobeTrotter/odoo_LDCE26/backend/error.log', new Date().toISOString() + ': ' + error.stack + '\n');
+    } catch (e) {
+      console.error('Failed to write error.log:', e);
+    }
     res.status(500).json({ error: 'Failed to create trip.' });
   }
 };
