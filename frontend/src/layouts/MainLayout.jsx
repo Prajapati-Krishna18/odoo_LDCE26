@@ -42,7 +42,7 @@ const MainLayout = () => {
           <div className="flex justify-between h-16 items-center">
             
             <div className="flex items-center">
-              <Link to="/dashboard" className="flex items-center gap-2 h-8">
+              <Link to="/dashboard" className="flex items-center gap-2 h-11">
                 <img src="/logo.png" alt="GlobeTrotter Logo" className="h-full object-contain" />
               </Link>
               
