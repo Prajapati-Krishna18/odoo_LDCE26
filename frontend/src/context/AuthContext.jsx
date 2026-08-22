@@ -28,31 +28,50 @@ const extractAvatar = (user) => {
   return meta.avatar_url || meta.picture || null;
 };
 
+const mapProfile = (dbUser) => {
+  if (!dbUser) return null;
+  return {
+    ...dbUser,
+    full_name: dbUser.name,
+    avatar_url: dbUser.profile_image,
+  };
+};
+
 const upsertProfile = async (user) => {
   if (!user) return null;
   const { firstName, fullName } = extractName(user);
   const avatar = extractAvatar(user);
 
+  // Check if profile exists
+  const { data: existingUser, error: fetchError } = await supabase
+    .from('users')
+    .select('*')
+    .eq('id', user.id)
+    .single();
+
+  if (existingUser) {
+    return mapProfile(existingUser);
+  }
+
+  // If not, insert a new record
   const { data, error } = await supabase
     .from('users')
-    .upsert(
-      {
-        id: user.id,
-        full_name: fullName || user.email?.split('@')[0] || 'Traveller',
-        avatar_url: avatar,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: 'id', ignoreDuplicates: false }
-    )
+    .insert({
+      id: user.id,
+      name: fullName || user.email?.split('@')[0] || 'Traveller',
+      email: user.email || '',
+      password: '', // default placeholder for Supabase-authenticated users
+      profile_image: avatar,
+    })
     .select()
     .single();
 
   if (error && error.code !== 'PGRST116') {
     // Table may not exist yet in Supabase – fail gracefully
-    console.warn('Profile upsert warning:', error.message);
+    console.warn('Profile insert warning:', error.message);
     return null;
   }
-  return data;
+  return mapProfile(data);
 };
 
 // ─── Provider ─────────────────────────────────────────────────────────────────
@@ -176,15 +195,25 @@ export const AuthProvider = ({ children }) => {
   /** Update profile fields */
   const updateProfile = async (updates) => {
     if (!user) return { success: false, error: 'Not authenticated' };
+
+    // Map updates to match the DB columns
+    const dbUpdates = {};
+    if (updates.full_name !== undefined) dbUpdates.name = updates.full_name;
+    if (updates.language !== undefined) dbUpdates.language = updates.language;
+    if (updates.avatar_url !== undefined) dbUpdates.profile_image = updates.avatar_url;
+    if (updates.role !== undefined) dbUpdates.role = updates.role;
+
     const { data, error } = await supabase
       .from('users')
-      .update(updates)
+      .update(dbUpdates)
       .eq('id', user.id)
       .select()
       .single();
     if (error) return { success: false, error: error.message };
-    setProfile(data);
-    return { success: true, data };
+    
+    const mappedProfile = mapProfile(data);
+    setProfile(mappedProfile);
+    return { success: true, data: mappedProfile };
   };
 
   /** Backward compat alias */

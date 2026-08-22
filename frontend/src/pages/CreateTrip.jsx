@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useToast } from '../context/ToastContext';
-import api from '../services/api';
+import { createTrip } from '../services/supabaseApi';
 import {
   Upload, Calendar, Users, Wallet, ChevronDown, MapPin,
   CheckCircle2, Info, ArrowRight, X
@@ -84,20 +84,20 @@ const CreateTrip = () => {
     }
     setLoading(true);
     try {
-      const response = await api.post('/api/trips', {
+      const trip = await createTrip({
         name: tripName,
-        destination,
-        startDate,
-        endDate,
-        budget,
-        tripType,
-        travelStyle,
-        coverImage: coverPreview || TRAVEL_STYLES.find(s => s.name === travelStyle)?.img,
+        start_date: startDate,
+        end_date: endDate,
+        budget: parseFloat(budget),
+        trip_type: tripType,
+        travel_style: travelStyle,
+        cover_image: coverPreview || TRAVEL_STYLES.find(s => s.name === travelStyle)?.img,
+        status: new Date(startDate) > new Date() ? 'Upcoming' : (new Date(endDate) < new Date() ? 'Completed' : 'Ongoing')
       });
       toastSuccess('Trip created successfully!');
-      navigate(`/trips/${response.data.id}`);
+      navigate(`/trips/${trip.id}`);
     } catch (error) {
-      toastError(error.response?.data?.error || 'Failed to create trip.');
+      toastError(error.message || 'Failed to create trip.');
     } finally {
       setLoading(false);
     }
