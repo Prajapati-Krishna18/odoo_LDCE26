@@ -4,8 +4,6 @@ import {
   MapPin, 
   Calendar, 
   Plus, 
-  ChevronLeft, 
-  ChevronRight, 
   ArrowRight, 
   Sparkles, 
   Clock, 
@@ -57,7 +55,7 @@ const Dashboard = () => {
   const destinations = [
     { id: 1, name: 'Manali', image: 'https://images.unsplash.com/photo-1626621341517-bbf3d9990a23?auto=format&fit=crop&w=600&q=80' },
     { id: 2, name: 'Goa', image: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=600&q=80' },
-    { id: 3, name: 'Udaipur', image: 'https://images.unsplash.com/photo-1598977123418-45f04b616a4e?auto=format&fit=crop&w=600&q=80' }
+    { id: 3, name: 'Udaipur', image: '/udaipur.jpg' }
   ];
 
   return (
@@ -162,8 +160,8 @@ const Dashboard = () => {
                         <h3 className="text-base font-bold text-[#0F172A] hover:text-[#F97316] transition-colors">
                           {trip.name}
                         </h3>
-                        <button className="text-[#94A3B8] hover:text-[#64748B] p-1 rounded-full hover:bg-slate-50">
-                          <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z"/></svg>
+                        <button className="text-[#64748B] hover:text-[#0F172A] p-1.5 rounded-full border border-slate-200 hover:border-slate-800 transition-all flex items-center justify-center">
+                          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z"/></svg>
                         </button>
                       </div>
                       <p className="text-xs text-[#64748B] flex items-center gap-1 mt-1 font-semibold">
@@ -257,14 +255,6 @@ const Dashboard = () => {
         <div className="space-y-4">
           <div className="flex justify-between items-center px-1">
             <h2 className="text-lg font-extrabold text-[#0F172A] tracking-tight">Popular Destinations</h2>
-            <div className="flex gap-1.5">
-              <button className="p-2 bg-white hover:bg-slate-50 border border-[#E2E8F0] rounded-full text-[#64748B] transition-all shadow-sm">
-                <ChevronLeft className="w-4 h-4" />
-              </button>
-              <button className="p-2 bg-white hover:bg-slate-50 border border-[#E2E8F0] rounded-full text-[#64748B] transition-all shadow-sm">
-                <ChevronRight className="w-4 h-4" />
-              </button>
-            </div>
           </div>
 
           {/* Carousel Grid */}
