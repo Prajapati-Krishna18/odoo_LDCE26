@@ -10,6 +10,8 @@ import MainLayout from './layouts/MainLayout';
 // Pages
 import Login from './pages/Login';
 import Signup from './pages/Signup';
+import ForgotPassword from './pages/ForgotPassword';
+import ResetPassword from './pages/ResetPassword';
 import Dashboard from './pages/Dashboard';
 import CreateTrip from './pages/CreateTrip';
 import MyTrips from './pages/MyTrips';
@@ -27,12 +29,14 @@ function App() {
       <ToastProvider>
         <AuthProvider>
           <Routes>
-            {/* Public routes */}
+            {/* ── Public routes ── */}
             <Route path="/login" element={<Login />} />
             <Route path="/signup" element={<Signup />} />
+            <Route path="/forgot-password" element={<ForgotPassword />} />
+            <Route path="/reset-password" element={<ResetPassword />} />
             <Route path="/share/:shareToken" element={<SharedItinerary />} />
 
-            {/* Protected dashboard and trip planning routes */}
+            {/* ── Protected routes ── */}
             <Route element={<ProtectedRoute />}>
               <Route element={<MainLayout />}>
                 <Route path="/dashboard" element={<Dashboard />} />
@@ -47,7 +51,7 @@ function App() {
               </Route>
             </Route>
 
-            {/* Catch-all fallback */}
+            {/* ── Catch-all ── */}
             <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Routes>
         </AuthProvider>

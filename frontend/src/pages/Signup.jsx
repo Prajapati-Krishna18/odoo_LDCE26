@@ -1,13 +1,14 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
-import { Eye, EyeOff } from 'lucide-react';
+import { Eye, EyeOff, CheckCircle } from 'lucide-react';
 
 const Signup = () => {
-  const { signup } = useAuth();
-  const { toastSuccess, toastError } = useToast();
+  const { signup, signInWithGoogle, isAuthenticated, loading: authLoading } = useAuth();
+  const { toastSuccess, toastError, toastInfo } = useToast();
   const navigate = useNavigate();
+  const submitting = useRef(false);
 
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -15,16 +16,23 @@ const Signup = () => {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [emailSent, setEmailSent] = useState(false); // email confirmation required state
 
-  const [passwordStrength, setPasswordStrength] = useState({ score: 0, text: 'Very Weak', color: 'bg-rose-500' });
+  const [passwordStrength, setPasswordStrength] = useState({ score: 0, text: 'Empty', color: 'bg-slate-200' });
 
-  // Calculate password strength
+  // Redirect already-authenticated users
+  useEffect(() => {
+    if (!authLoading && isAuthenticated) {
+      navigate('/dashboard', { replace: true });
+    }
+  }, [isAuthenticated, authLoading, navigate]);
+
+  // Password strength calculator
   useEffect(() => {
     if (!password) {
       setPasswordStrength({ score: 0, text: 'Empty', color: 'bg-slate-200' });
       return;
     }
-
     let score = 0;
     if (password.length >= 6) score += 1;
     if (password.length >= 10) score += 1;
@@ -32,82 +40,110 @@ const Signup = () => {
     if (/[0-9]/.test(password)) score += 1;
     if (/[^A-Za-z0-9]/.test(password)) score += 1;
 
-    let text = 'Very Weak';
-    let color = 'bg-rose-500';
-
-    if (score === 2) {
-      text = 'Weak';
-      color = 'bg-amber-400';
-    } else if (score === 3) {
-      text = 'Medium';
-      color = 'bg-yellow-500';
-    } else if (score === 4) {
-      text = 'Strong';
-      color = 'bg-emerald-500';
-    } else if (score === 5) {
-      text = 'Very Strong';
-      color = 'bg-emerald-600';
-    }
-
+    let text = 'Very Weak', color = 'bg-rose-500';
+    if (score === 2) { text = 'Weak'; color = 'bg-rose-400'; }
+    else if (score === 3) { text = 'Medium'; color = 'bg-yellow-500'; }
+    else if (score === 4) { text = 'Strong'; color = 'bg-emerald-500'; }
+    else if (score === 5) { text = 'Very Strong'; color = 'bg-emerald-600'; }
     setPasswordStrength({ score, text, color });
   }, [password]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (submitting.current) return;
 
-    if (!name || !email || !password || !confirmPassword) {
+    if (!name.trim() || !email || !password || !confirmPassword) {
       toastError('Please fill in all fields.');
       return;
     }
-
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
       toastError('Please enter a valid email address.');
       return;
     }
-
     if (password.length < 6) {
       toastError('Password must be at least 6 characters.');
       return;
     }
-
     if (password !== confirmPassword) {
       toastError('Passwords do not match.');
       return;
     }
 
+    submitting.current = true;
     setLoading(true);
-    const result = await signup(name, email, password, confirmPassword);
+    const result = await signup(name.trim(), email, password);
     setLoading(false);
+    submitting.current = false;
 
     if (result.success) {
-      toastSuccess('Registration successful! Welcome to GlobeTrotter.');
-      navigate('/dashboard');
+      if (result.needsConfirm) {
+        // Email confirmation is enabled in Supabase
+        setEmailSent(true);
+      } else {
+        toastSuccess('Welcome to GlobeTrotter! 🌏');
+        navigate('/dashboard');
+      }
     } else {
-      toastError(result.error);
+      let msg = result.error || 'Registration failed. Please try again.';
+      if (msg.includes('User already registered')) msg = 'An account with this email already exists. Try logging in.';
+      toastError(msg);
     }
   };
+
+  const handleGoogleSignup = async () => {
+    if (submitting.current) return;
+    submitting.current = true;
+    toastInfo('Redirecting to Google Sign-In...');
+    const result = await signInWithGoogle();
+    submitting.current = false;
+    if (!result.success) {
+      toastError(result.error || 'Google signup failed. Please try again.');
+    }
+  };
+
+  // Email confirmation sent screen
+  if (emailSent) {
+    return (
+      <div className="min-h-screen bg-[#FFF7ED] flex items-center justify-center p-6">
+        <div className="bg-white rounded-3xl p-10 max-w-md w-full text-center shadow-md border border-slate-100 space-y-5">
+          <div className="w-16 h-16 bg-emerald-50 rounded-full flex items-center justify-center mx-auto">
+            <CheckCircle className="w-8 h-8 text-emerald-500" />
+          </div>
+          <div className="text-3xl">🏔️</div>
+          <h2 className="text-2xl font-serif font-bold text-[#0F172A]">Almost there!</h2>
+          <p className="text-sm text-[#64748B] leading-relaxed">
+            We've sent a confirmation link to{' '}
+            <span className="font-bold text-[#0F172A]">{email}</span>.
+            <br />
+            Click the link in your email to activate your account.
+          </p>
+          <Link
+            to="/login"
+            className="inline-block bg-[#C2410C] text-white px-6 py-3 rounded-xl text-sm font-bold hover:bg-[#9A3412] transition-colors"
+          >
+            Go to Login
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex font-sans">
       {/* Left Column - Image Showcase */}
       <div className="hidden lg:flex lg:w-[45%] relative bg-slate-900 overflow-hidden">
-        <img 
-          src="https://images.pexels.com/photos/1007427/pexels-photo-1007427.jpeg?auto=compress&cs=tinysrgb&w=1260&h=750&dpr=2" 
-          alt="Indian Heritage" 
+        <img
+          src="https://images.pexels.com/photos/1007427/pexels-photo-1007427.jpeg?auto=compress&cs=tinysrgb&w=1260&h=750&dpr=2"
+          alt="Indian Heritage"
           className="absolute inset-0 w-full h-full object-cover z-0"
         />
-        {/* Subtle gradient overlay to make text readable */}
-        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent z-0"></div>
-        
-        {/* Dotted curve overlay decoration (approximated with CSS) */}
+        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent z-0" />
         <svg className="absolute inset-0 w-full h-full z-0 opacity-40 pointer-events-none" viewBox="0 0 100 100" preserveAspectRatio="none">
           <path d="M0,70 Q25,80 50,65 T100,20" fill="none" stroke="white" strokeWidth="0.2" strokeDasharray="1 1" />
           <circle cx="20" cy="72" r="0.8" fill="white" />
           <circle cx="80" cy="40" r="0.8" fill="white" />
         </svg>
-
-        {/* Text content overlay */}
         <div className="absolute bottom-16 left-12 right-12 z-10 text-white pr-12">
           <h1 className="text-5xl font-serif font-bold mb-4 leading-tight tracking-tight shadow-sm">
             Begin Your Journey
@@ -116,20 +152,16 @@ const Signup = () => {
             Join the ultimate premium concierge for curating unforgettable experiences across the subcontinent.
           </p>
         </div>
-        
-        {/* Browser title-like branding */}
         <div className="absolute top-6 left-6 flex items-center text-white/90 z-10 text-sm font-semibold">
-           <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
-           </svg>
-           Login / Signup - GlobeTrotter India
+          <span className="text-xl mr-2">🏔️</span>
+          GlobeTrotter India
         </div>
       </div>
 
       {/* Right Column - Form Container */}
       <div className="w-full lg:w-[55%] flex items-center justify-center bg-[#FFF7ED] p-6 sm:p-12 overflow-y-auto">
         <div className="w-full max-w-md bg-white p-10 rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-slate-100/50 my-auto">
-          
+
           <h2 className="text-3xl font-serif font-bold text-[#0F172A] tracking-tight">
             Create an Account <span className="inline-block animate-wave origin-bottom-right">✨</span>
           </h2>
@@ -137,7 +169,7 @@ const Signup = () => {
             Sign up to start planning your premium trips.
           </p>
 
-          <form className="space-y-4" onSubmit={handleSubmit}>
+          <form className="space-y-4" onSubmit={handleSubmit} noValidate>
             {/* Name Field */}
             <div>
               <label htmlFor="name" className="block text-xs font-bold text-[#0F172A] tracking-wide uppercase mb-1.5">
@@ -156,11 +188,11 @@ const Signup = () => {
 
             {/* Email Field */}
             <div>
-              <label htmlFor="email" className="block text-xs font-bold text-[#0F172A] tracking-wide uppercase mb-1.5">
+              <label htmlFor="signup-email" className="block text-xs font-bold text-[#0F172A] tracking-wide uppercase mb-1.5">
                 Email Address
               </label>
               <input
-                id="email"
+                id="signup-email"
                 type="email"
                 required
                 value={email}
@@ -172,14 +204,12 @@ const Signup = () => {
 
             {/* Password Field */}
             <div>
-              <div className="flex justify-between items-center mb-1.5">
-                <label htmlFor="password" className="block text-xs font-bold text-[#0F172A] tracking-wide uppercase">
-                  Password
-                </label>
-              </div>
+              <label htmlFor="signup-password" className="block text-xs font-bold text-[#0F172A] tracking-wide uppercase mb-1.5">
+                Password
+              </label>
               <div className="relative">
                 <input
-                  id="password"
+                  id="signup-password"
                   type={showPassword ? 'text' : 'password'}
                   required
                   value={password}
@@ -195,21 +225,18 @@ const Signup = () => {
                   {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </button>
               </div>
-              
-              {/* Password strength indicator */}
+              {/* Strength indicator */}
               {password && (
                 <div className="mt-2 pl-1">
                   <div className="flex justify-between items-center mb-1">
                     <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Strength</span>
-                    <span className={`text-[10px] font-bold uppercase tracking-wider ${passwordStrength.color.replace('bg-', 'text-')}`}>
-                      {passwordStrength.text}
-                    </span>
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">{passwordStrength.text}</span>
                   </div>
                   <div className="w-full h-1 bg-slate-200 rounded-full overflow-hidden">
                     <div
                       className={`h-full ${passwordStrength.color} transition-all duration-300`}
                       style={{ width: `${(passwordStrength.score / 5) * 100}%` }}
-                    ></div>
+                    />
                   </div>
                 </div>
               )}
@@ -217,22 +244,25 @@ const Signup = () => {
 
             {/* Confirm Password Field */}
             <div>
-              <div className="flex justify-between items-center mb-1.5">
-                <label htmlFor="confirm-password" className="block text-xs font-bold text-[#0F172A] tracking-wide uppercase">
-                  Confirm Password
-                </label>
-              </div>
-              <div className="relative">
-                <input
-                  id="confirm-password"
-                  type="password"
-                  required
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  placeholder="••••••••"
-                  className="w-full px-4 py-3 bg-[#FFF7ED]/50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#F97316]/20 focus:border-[#F97316] transition-colors text-[#0F172A] placeholder-slate-400"
-                />
-              </div>
+              <label htmlFor="confirm-password" className="block text-xs font-bold text-[#0F172A] tracking-wide uppercase mb-1.5">
+                Confirm Password
+              </label>
+              <input
+                id="confirm-password"
+                type="password"
+                required
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                placeholder="••••••••"
+                className={`w-full px-4 py-3 bg-[#FFF7ED]/50 border rounded-xl text-sm focus:outline-none focus:ring-2 transition-colors text-[#0F172A] placeholder-slate-400 ${
+                  confirmPassword && confirmPassword !== password
+                    ? 'border-rose-300 focus:ring-rose-200'
+                    : 'border-slate-200 focus:ring-[#F97316]/20 focus:border-[#F97316]'
+                }`}
+              />
+              {confirmPassword && confirmPassword !== password && (
+                <p className="text-[10px] text-rose-500 mt-1 font-semibold">Passwords do not match</p>
+              )}
             </div>
 
             {/* Submit Button */}
@@ -240,29 +270,30 @@ const Signup = () => {
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full bg-[#C84F14] hover:bg-[#A93D0E] text-white py-3.5 rounded-xl text-sm font-bold shadow-md shadow-[#C84F14]/20 transition-all disabled:opacity-70 flex items-center justify-center"
+                className="w-full bg-[#C2410C] hover:bg-[#9A3412] text-white py-3.5 rounded-xl text-sm font-bold shadow-md shadow-[#C2410C]/20 transition-all disabled:opacity-70 flex items-center justify-center"
               >
                 {loading ? (
-                  <div className="h-5 w-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                  <div className="h-5 w-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                 ) : (
                   'Create Account'
                 )}
               </button>
             </div>
-            
+
             {/* Divider */}
             <div className="relative py-2 flex items-center">
-              <div className="flex-grow border-t border-slate-100"></div>
+              <div className="flex-grow border-t border-slate-100" />
               <span className="flex-shrink-0 mx-4 text-[10px] font-bold tracking-widest text-slate-400 uppercase">
                 Or Continue With
               </span>
-              <div className="flex-grow border-t border-slate-100"></div>
+              <div className="flex-grow border-t border-slate-100" />
             </div>
 
             {/* Google Signup */}
             <button
               type="button"
-              className="w-full bg-white border border-slate-200 hover:bg-slate-50 text-[#0F172A] py-3 rounded-xl text-sm font-semibold transition-colors flex items-center justify-center gap-3"
+              onClick={handleGoogleSignup}
+              className="w-full bg-white border border-slate-200 hover:bg-slate-50 text-[#0F172A] py-3 rounded-xl text-sm font-semibold transition-all flex items-center justify-center gap-3 cursor-pointer hover:border-slate-300 hover:shadow-sm"
             >
               <svg className="w-5 h-5" viewBox="0 0 24 24">
                 <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4" />
@@ -271,13 +302,13 @@ const Signup = () => {
                 <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335" />
                 <path d="M1 1h22v22H1z" fill="none" />
               </svg>
-              Google
+              Continue with Google
             </button>
 
             {/* Login Link */}
             <p className="text-center text-xs text-[#64748B] mt-6 pb-2">
               Already have an account?{' '}
-              <Link to="/login" className="text-[#C84F14] font-bold hover:underline underline-offset-2">
+              <Link to="/login" className="text-[#C2410C] font-bold hover:underline underline-offset-2">
                 Sign In
               </Link>
             </p>
