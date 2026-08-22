@@ -49,6 +49,12 @@ const upsertProfile = async (user) => {
     .eq('id', user.id)
     .single();
 
+  if (fetchError && fetchError.code !== 'PGRST116') {
+    // PGRST116 = no rows found — that's expected for new users
+    // Any other error (e.g. 400 bad API key, 401, network) — log it clearly
+    console.error('[GlobeTrotter] upsertProfile fetch error:', fetchError.code, fetchError.message);
+  }
+
   if (existingUser) {
     return mapProfile(existingUser);
   }
@@ -58,21 +64,21 @@ const upsertProfile = async (user) => {
     .from('users')
     .insert({
       id: user.id,
-      name: fullName || user.email?.split('@')[0] || 'Traveller',
+      name: fullName || user.user_metadata?.full_name || user.email?.split('@')[0] || 'Traveller',
       email: user.email || '',
-      password: '', // default placeholder for Supabase-authenticated users
-      profile_image: avatar,
+      password: '', // placeholder — auth handled by Supabase Auth
+      profile_image: avatar || null,
     })
     .select()
     .single();
 
-  if (error && error.code !== 'PGRST116') {
-    // Table may not exist yet in Supabase – fail gracefully
-    console.warn('Profile insert warning:', error.message);
+  if (error) {
+    console.error('[GlobeTrotter] upsertProfile insert error:', error.code, error.message, error.details);
     return null;
   }
   return mapProfile(data);
 };
+
 
 // ─── Provider ─────────────────────────────────────────────────────────────────
 export const AuthProvider = ({ children }) => {

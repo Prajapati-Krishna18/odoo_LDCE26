@@ -1,7 +1,9 @@
 import axios from 'axios';
 
+// In local dev: Vite proxy forwards /api → http://localhost:5000 (vite.config.js)
+// In production (Vercel): set VITE_API_BASE_URL=https://odoo-ldce26-hgno.onrender.com in Vercel env vars
 const api = axios.create({
-  baseURL: '', // Using Vite proxy configured in vite.config.js
+  baseURL: import.meta.env.VITE_API_BASE_URL || '',
 });
 
 // Request interceptor to automatically add token
