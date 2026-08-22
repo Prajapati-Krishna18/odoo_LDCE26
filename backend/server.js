@@ -42,6 +42,11 @@ app.use('/api/saved-destinations', savedDestinationsRoutes);
 app.use('/api/packing', packingRoutes);
 app.use('/api/ai', aiRoutes);
 
+// Root route — prevents "Cannot GET /" on Render
+app.get('/', (req, res) => {
+  res.json({ status: 'ok', message: 'GlobeTrotter API is running. Use /api/* endpoints.' });
+});
+
 // Health check endpoint
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', message: 'GlobeTrotter API Server is running' });
