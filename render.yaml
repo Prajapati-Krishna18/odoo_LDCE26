@@ -1,0 +1,49 @@
+# render.yaml — GlobeTrotter Render deployment configuration
+# Defines both the backend Web Service and the frontend Static Site.
+# Set secrets via the Render dashboard Environment tab (marked sync: false).
+
+services:
+  # ── Backend: Express API ──────────────────────────────────────────────────
+  - type: web
+    name: globetrotter-backend
+    runtime: node
+    rootDir: backend
+    buildCommand: npm install && npx prisma generate
+    startCommand: node server.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      # ↓ Set these manually in the Render dashboard (Environment section)
+      - key: DATABASE_URL
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SECRET_KEY
+        sync: false
+      - key: SUPABASE_JWKS_URL
+        sync: false
+      - key: GEOAPIFY_API_KEY
+        sync: false
+
+  # ── Frontend: React + Vite Static Site ───────────────────────────────────
+  - type: web
+    name: globetrotter-frontend
+    runtime: static
+    rootDir: frontend
+    buildCommand: npm install && npm run build
+    staticPublishPath: ./dist
+    # SPA rewrite: all paths → index.html (also handled by public/_redirects)
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    envVars:
+      # ↓ Set these manually in the Render dashboard (Environment section)
+      - key: VITE_SUPABASE_URL
+        sync: false
+      - key: VITE_SUPABASE_ANON_KEY
+        sync: false
