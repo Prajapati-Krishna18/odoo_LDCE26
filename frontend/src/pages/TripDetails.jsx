@@ -63,9 +63,10 @@ const TripDetails = () => {
       
       {/* 1. Header Hero Banner Block */}
       <div 
-        className="relative w-full h-[320px] bg-cover bg-center flex flex-col justify-end pb-8"
+        className="relative w-full h-[320px] bg-cover flex flex-col justify-end pb-8"
         style={{ 
-          backgroundImage: `linear-gradient(to bottom, rgba(15, 23, 42, 0.15) 0%, rgba(15, 23, 42, 0.65) 100%), url('/jalmahal.png')` 
+          backgroundImage: `linear-gradient(to bottom, rgba(15, 23, 42, 0.15) 0%, rgba(15, 23, 42, 0.65) 100%), url('/jalmahal.png')`,
+          backgroundPosition: 'center 60%'
         }}
       >
         <div className="max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row justify-between items-start sm:items-end gap-6">
