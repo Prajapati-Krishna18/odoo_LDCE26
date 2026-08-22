@@ -142,6 +142,24 @@ export const SupabaseAuthProvider = ({ children }) => {
     }
   };
 
+  // Sign In with Google OAuth
+  const signInWithGoogle = async () => {
+    try {
+      const { data, error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: `${window.location.origin}/dashboard`,
+        },
+      });
+
+      if (error) throw error;
+      return { success: true, data };
+    } catch (error) {
+      console.error('Google Sign In Error:', error);
+      return { success: false, error: error.message };
+    }
+  };
+
   const value = {
     user,
     session,
@@ -149,6 +167,7 @@ export const SupabaseAuthProvider = ({ children }) => {
     loading,
     signUp,
     signIn,
+    signInWithGoogle,
     signOut,
     updateProfile,
     isAuthenticated: !!user,

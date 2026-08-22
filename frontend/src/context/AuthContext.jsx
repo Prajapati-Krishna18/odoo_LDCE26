@@ -1,113 +1,249 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
-import api from '../services/api';
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
+import { supabase } from '../lib/supabase';
 
 const AuthContext = createContext();
 
+// ─── Hook ────────────────────────────────────────────────────────────────────
 export const useAuth = () => {
-  const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
-  return context;
+  const ctx = useContext(AuthContext);
+  if (!ctx) throw new Error('useAuth must be used within an AuthProvider');
+  return ctx;
 };
 
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+const extractName = (user) => {
+  if (!user) return { firstName: '', lastName: '', fullName: '' };
+  const meta = user.user_metadata || {};
+  // Google / OAuth provides full_name or name
+  const full = meta.full_name || meta.name || '';
+  const parts = full.trim().split(' ');
+  const firstName = parts[0] || '';
+  const lastName = parts.slice(1).join(' ') || '';
+  return { firstName, lastName, fullName: full };
+};
+
+const extractAvatar = (user) => {
+  if (!user) return null;
+  const meta = user.user_metadata || {};
+  return meta.avatar_url || meta.picture || null;
+};
+
+const upsertProfile = async (user) => {
+  if (!user) return null;
+  const { firstName, fullName } = extractName(user);
+  const avatar = extractAvatar(user);
+
+  const { data, error } = await supabase
+    .from('users')
+    .upsert(
+      {
+        id: user.id,
+        full_name: fullName || user.email?.split('@')[0] || 'Traveller',
+        avatar_url: avatar,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'id', ignoreDuplicates: false }
+    )
+    .select()
+    .single();
+
+  if (error && error.code !== 'PGRST116') {
+    // Table may not exist yet in Supabase – fail gracefully
+    console.warn('Profile upsert warning:', error.message);
+    return null;
+  }
+  return data;
+};
+
+// ─── Provider ─────────────────────────────────────────────────────────────────
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
+  const [profile, setProfile] = useState(null);
+  const [session, setSession] = useState(null);
   const [loading, setLoading] = useState(true);
+  const initDone = useRef(false);
 
-  // Check if user is logged in on mount
   useEffect(() => {
-    const fetchCurrentUser = async () => {
-      const token = localStorage.getItem('token');
-      if (!token) {
-        setLoading(false);
-        return;
+    // 1. Restore existing session on mount
+    supabase.auth.getSession().then(async ({ data: { session: s } }) => {
+      setSession(s);
+      setUser(s?.user ?? null);
+      if (s?.user) {
+        const p = await upsertProfile(s.user);
+        setProfile(p);
       }
+      setLoading(false);
+      initDone.current = true;
+    });
 
-      try {
-        const response = await api.get('/api/auth/me');
-        setUser(response.data.user);
-      } catch (error) {
-        console.error('Failed to restore session:', error);
-        localStorage.removeItem('token');
-      } finally {
+    // 2. Listen for auth state changes (login, logout, token refresh, OAuth redirect)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, s) => {
+        // Skip the initial SIGNED_IN that fires right after getSession
+        if (!initDone.current && event === 'INITIAL_SESSION') return;
+
+        setSession(s);
+        setUser(s?.user ?? null);
+
+        if (s?.user) {
+          const p = await upsertProfile(s.user);
+          setProfile(p);
+        } else {
+          setProfile(null);
+        }
         setLoading(false);
       }
-    };
+    );
 
-    fetchCurrentUser();
+    return () => subscription.unsubscribe();
   }, []);
 
-  const login = async (email, password) => {
+  // ── Auth Methods ────────────────────────────────────────────────────────────
+
+  /** Email + Password Sign In */
+  const signIn = async (email, password) => {
     setLoading(true);
-    try {
-      const response = await api.post('/api/auth/login', { email, password });
-      const { token, user: userData } = response.data;
-      localStorage.setItem('token', token);
-      setUser(userData);
-      return { success: true };
-    } catch (error) {
-      console.error('Login error:', error);
-      return {
-        success: false,
-        error: error.response?.data?.error || 'Authentication failed. Please check credentials.'
-      };
-    } finally {
-      setLoading(false);
-    }
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    setLoading(false);
+    if (error) return { success: false, error: error.message };
+    return { success: true, data };
   };
 
-  const signup = async (name, email, password, confirmPassword) => {
+  /** Alias kept for backward compat with Login.jsx */
+  const login = signIn;
+
+  /** Email + Password Sign Up */
+  const signUp = async (name, email, password) => {
     setLoading(true);
-    try {
-      const response = await api.post('/api/auth/signup', { name, email, password, confirmPassword });
-      const { token, user: userData } = response.data;
-      localStorage.setItem('token', token);
-      setUser(userData);
-      return { success: true };
-    } catch (error) {
-      console.error('Signup error:', error);
-      return {
-        success: false,
-        error: error.response?.data?.error || 'Registration failed. Please try again.'
-      };
-    } finally {
-      setLoading(false);
-    }
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: { full_name: name },
+        // If Supabase email confirmation is OFF, user lands on dashboard.
+        // If ON, Supabase sends confirm email – we show a message instead.
+        emailRedirectTo: `${window.location.origin}/dashboard`,
+      },
+    });
+    setLoading(false);
+    if (error) return { success: false, error: error.message };
+
+    // session is null when email confirmation is required
+    const needsConfirm = !data.session;
+    return { success: true, needsConfirm, data };
   };
 
-  const logout = async () => {
-    try {
-      await api.post('/api/auth/logout');
-    } catch (error) {
-      console.error('Logout API failed:', error);
-    } finally {
-      localStorage.removeItem('token');
-      setUser(null);
-    }
+  /** Alias kept for backward compat with Signup.jsx */
+  const signup = (name, email, password) => signUp(name, email, password);
+
+  /** Google OAuth */
+  const signInWithGoogle = async () => {
+    const { data, error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: { redirectTo: `${window.location.origin}/dashboard` },
+    });
+    if (error) return { success: false, error: error.message };
+    return { success: true, data };
   };
 
-  const updatePreferences = (updatedUser) => {
-    setUser(updatedUser);
+  /** Send password reset email */
+  const forgotPassword = async (email) => {
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/reset-password`,
+    });
+    if (error) return { success: false, error: error.message };
+    return { success: true };
   };
 
+  /** Update password (called from /reset-password page after redirect) */
+  const resetPassword = async (newPassword) => {
+    const { data, error } = await supabase.auth.updateUser({ password: newPassword });
+    if (error) return { success: false, error: error.message };
+    return { success: true, data };
+  };
+
+  /** Sign Out */
+  const signOut = async () => {
+    await supabase.auth.signOut();
+    setUser(null);
+    setSession(null);
+    setProfile(null);
+  };
+
+  /** Alias kept for backward compat with MainLayout.jsx */
+  const logout = signOut;
+
+  /** Update profile fields */
+  const updateProfile = async (updates) => {
+    if (!user) return { success: false, error: 'Not authenticated' };
+    const { data, error } = await supabase
+      .from('users')
+      .update(updates)
+      .eq('id', user.id)
+      .select()
+      .single();
+    if (error) return { success: false, error: error.message };
+    setProfile(data);
+    return { success: true, data };
+  };
+
+  /** Backward compat alias */
+  const updatePreferences = (u) => setProfile(u);
+
+  // ── Derived display values ───────────────────────────────────────────────────
+  const { firstName, lastName, fullName } = extractName(user);
+  const avatarUrl = profile?.avatar_url || extractAvatar(user);
+  const displayName = profile?.full_name || fullName || user?.email?.split('@')[0] || 'Traveller';
+  const initials = displayName
+    .split(' ')
+    .map((w) => w[0])
+    .slice(0, 2)
+    .join('')
+    .toUpperCase();
+
+  // ── Context value ────────────────────────────────────────────────────────────
   const value = {
+    // State
     user,
+    session,
+    profile,
     loading,
-    login,
-    signup,
-    logout,
-    updatePreferences,
     isAuthenticated: !!user,
+    // Display helpers
+    displayName,
+    firstName,
+    lastName,
+    fullName,
+    avatarUrl,
+    initials,
+    // Auth methods
+    signIn,
+    login,           // compat
+    signUp,
+    signup,          // compat
+    signInWithGoogle,
+    signOut,
+    logout,          // compat
+    forgotPassword,
+    resetPassword,
+    updateProfile,
+    updatePreferences, // compat
   };
 
   return (
     <AuthContext.Provider value={value}>
-      {!loading ? children : (
-        <div className="min-h-screen flex items-center justify-center bg-brand-light">
-          <div className="flex flex-col items-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-brand-secondary"></div>
-            <p className="mt-4 text-sm text-slate-500 font-medium animate-pulse">Loading GlobeTrotter...</p>
+      {!loading ? (
+        children
+      ) : (
+        <div className="min-h-screen flex items-center justify-center bg-[#FFF7ED]">
+          <div className="flex flex-col items-center gap-4">
+            <div className="relative">
+              <div className="w-16 h-16 rounded-full border-4 border-[#FDE6D5] border-t-[#C2410C] animate-spin" />
+              <span className="absolute inset-0 flex items-center justify-center text-xl">🏔️</span>
+            </div>
+            <p className="text-sm text-[#92400E] font-semibold animate-pulse">
+              Loading GlobeTrotter...
+            </p>
           </div>
         </div>
       )}
