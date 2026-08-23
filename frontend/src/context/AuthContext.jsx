@@ -94,8 +94,13 @@ export const AuthProvider = ({ children }) => {
       setSession(s);
       setUser(s?.user ?? null);
       if (s?.user) {
+        if (s?.access_token) {
+          localStorage.setItem('token', s.access_token);
+        }
         const p = await upsertProfile(s.user);
         setProfile(p);
+      } else {
+        localStorage.removeItem('token');
       }
       setLoading(false);
       initDone.current = true;
@@ -111,10 +116,14 @@ export const AuthProvider = ({ children }) => {
         setUser(s?.user ?? null);
 
         if (s?.user) {
+          if (s?.access_token) {
+            localStorage.setItem('token', s.access_token);
+          }
           const p = await upsertProfile(s.user);
           setProfile(p);
         } else {
           setProfile(null);
+          localStorage.removeItem('token');
         }
         setLoading(false);
       }
