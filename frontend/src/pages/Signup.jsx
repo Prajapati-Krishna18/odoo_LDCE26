@@ -85,8 +85,22 @@ const Signup = () => {
         navigate('/dashboard');
       }
     } else {
-      let msg = result.error || 'Registration failed. Please try again.';
-      if (msg.includes('User already registered')) msg = 'An account with this email already exists. Try logging in.';
+      // Log full error for debugging
+      console.error('[GlobeTrotter] Signup failed:', result.error);
+
+      const raw = result.error || '';
+      let msg = raw || 'Registration failed. Please try again.';
+
+      if (raw.includes('User already registered')) {
+        msg = 'An account with this email already exists. Try logging in instead.';
+      } else if (raw.includes('Signups not allowed')) {
+        msg = 'Email signups are currently disabled. Please use Google sign-in.';
+      } else if (raw.includes('rate') || raw.includes('too many')) {
+        msg = 'Too many signup attempts. Please wait a moment and try again.';
+      } else if (raw.includes('password')) {
+        msg = raw; // Show password-related errors as-is
+      }
+
       toastError(msg);
     }
   };

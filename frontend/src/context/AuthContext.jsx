@@ -32,14 +32,15 @@ const mapProfile = (dbUser) => {
   if (!dbUser) return null;
   return {
     ...dbUser,
-    full_name: dbUser.name,
-    avatar_url: dbUser.profile_image,
+    // Supabase public.users already uses full_name and avatar_url
+    full_name: dbUser.full_name,
+    avatar_url: dbUser.avatar_url,
   };
 };
 
 const upsertProfile = async (user) => {
   if (!user) return null;
-  const { firstName, fullName } = extractName(user);
+  const { fullName } = extractName(user);
   const avatar = extractAvatar(user);
 
   // Check if profile exists
@@ -51,6 +52,7 @@ const upsertProfile = async (user) => {
 
   if (fetchError && fetchError.code !== 'PGRST116') {
     // PGRST116 = no rows found — that's expected for new users
+    // Any other error (e.g. 400 bad API key, 401, network) — log it clearly
     console.error('[GlobeTrotter] upsertProfile fetch error:', fetchError.code, fetchError.message);
   }
 
@@ -58,40 +60,13 @@ const upsertProfile = async (user) => {
     return mapProfile(existingUser);
   }
 
-  // Check if a profile with the same email already exists
-  if (user.email) {
-    const { data: userByEmail } = await supabase
-      .from('users')
-      .select('*')
-      .eq('email', user.email.toLowerCase())
-      .single();
-
-    if (userByEmail) {
-      // Try to update the existing record's ID to match the new authenticated user's ID
-      const { data: updatedUser, error: updateError } = await supabase
-        .from('users')
-        .update({ id: user.id })
-        .eq('email', user.email.toLowerCase())
-        .select()
-        .single();
-
-      if (!updateError && updatedUser) {
-        return mapProfile(updatedUser);
-      } else {
-        console.warn('[GlobeTrotter] Failed to update user ID by email, deleting conflicting legacy user profile:', updateError);
-        // Delete conflicting old user record so we can insert the new one
-        await supabase.from('users').delete().eq('email', user.email.toLowerCase());
-      }
-    }
-  }
-
-  // If not found or legacy record cleared, insert a new record
+  // If not, insert a new record
   const { data, error } = await supabase
     .from('users')
     .insert({
       id: user.id,
       name: fullName || user.user_metadata?.full_name || user.email?.split('@')[0] || 'Traveller',
-      email: user.email?.toLowerCase() || '',
+      email: user.email || '',
       password: '', // placeholder — auth handled by Supabase Auth
       profile_image: avatar || null,
     })
@@ -99,8 +74,18 @@ const upsertProfile = async (user) => {
     .single();
 
   if (error) {
-    console.error('[GlobeTrotter] upsertProfile insert error:', error.code, error.message, error.details);
-    return null;
+    console.error('[GlobeTrotter] upsertProfile error:', error.code, error.message, error.details);
+    // Fallback: try to fetch the existing profile (trigger may have created it)
+    const { data: existing, error: fetchErr } = await supabase
+      .from('users')
+      .select('*')
+      .eq('id', user.id)
+      .single();
+    if (fetchErr) {
+      console.error('[GlobeTrotter] upsertProfile fallback fetch error:', fetchErr.code, fetchErr.message);
+      return null;
+    }
+    return mapProfile(existing);
   }
   return mapProfile(data);
 };
@@ -165,7 +150,10 @@ export const AuthProvider = ({ children }) => {
     setLoading(true);
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     setLoading(false);
-    if (error) return { success: false, error: error.message };
+    if (error) {
+      console.error('[GlobeTrotter] signIn error:', error.message, error.status, error);
+      return { success: false, error: error.message };
+    }
     return { success: true, data };
   };
 
@@ -186,7 +174,10 @@ export const AuthProvider = ({ children }) => {
       },
     });
     setLoading(false);
-    if (error) return { success: false, error: error.message };
+    if (error) {
+      console.error('[GlobeTrotter] signUp error:', error.message, error.status, error);
+      return { success: false, error: error.message };
+    }
 
     // session is null when email confirmation is required
     const needsConfirm = !data.session;
@@ -237,12 +228,10 @@ export const AuthProvider = ({ children }) => {
   const updateProfile = async (updates) => {
     if (!user) return { success: false, error: 'Not authenticated' };
 
-    // Map updates to match the DB columns
+    // Write directly using Supabase public.users column names
     const dbUpdates = {};
-    if (updates.full_name !== undefined) dbUpdates.name = updates.full_name;
-    if (updates.language !== undefined) dbUpdates.language = updates.language;
-    if (updates.avatar_url !== undefined) dbUpdates.profile_image = updates.avatar_url;
-    if (updates.role !== undefined) dbUpdates.role = updates.role;
+    if (updates.full_name !== undefined) dbUpdates.full_name = updates.full_name;
+    if (updates.avatar_url !== undefined) dbUpdates.avatar_url = updates.avatar_url;
 
     const { data, error } = await supabase
       .from('users')
@@ -250,8 +239,11 @@ export const AuthProvider = ({ children }) => {
       .eq('id', user.id)
       .select()
       .single();
-    if (error) return { success: false, error: error.message };
-    
+    if (error) {
+      console.error('[GlobeTrotter] updateProfile error:', error.code, error.message);
+      return { success: false, error: error.message };
+    }
+
     const mappedProfile = mapProfile(data);
     setProfile(mappedProfile);
     return { success: true, data: mappedProfile };

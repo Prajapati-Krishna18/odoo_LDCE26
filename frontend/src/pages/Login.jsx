@@ -50,10 +50,23 @@ const Login = () => {
       toastSuccess('Welcome back to GlobeTrotter! 🌏');
       navigate('/dashboard');
     } else {
+      // Log full error for debugging
+      console.error('[GlobeTrotter] Login failed:', result.error);
+
       // Map Supabase error messages to friendly text
-      let msg = result.error || 'Login failed. Please try again.';
-      if (msg.includes('Invalid login credentials')) msg = 'Incorrect email or password.';
-      if (msg.includes('Email not confirmed')) msg = 'Please confirm your email before logging in.';
+      const raw = result.error || '';
+      let msg = raw || 'Login failed. Please try again.';
+
+      if (raw.includes('Invalid login credentials')) {
+        msg = 'Incorrect email or password. If you signed up with Google, please use "Continue with Google" instead.';
+      } else if (raw.includes('Email not confirmed')) {
+        msg = 'Please confirm your email before logging in. Check your inbox for the confirmation link.';
+      } else if (raw.includes('Signups not allowed')) {
+        msg = 'Email login is not enabled. Please contact support or use Google sign-in.';
+      } else if (raw.includes('rate') || raw.includes('too many')) {
+        msg = 'Too many login attempts. Please wait a moment and try again.';
+      }
+
       toastError(msg);
     }
   };
