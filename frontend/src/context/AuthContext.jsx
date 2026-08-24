@@ -51,7 +51,6 @@ const upsertProfile = async (user) => {
 
   if (fetchError && fetchError.code !== 'PGRST116') {
     // PGRST116 = no rows found — that's expected for new users
-    // Any other error (e.g. 400 bad API key, 401, network) — log it clearly
     console.error('[GlobeTrotter] upsertProfile fetch error:', fetchError.code, fetchError.message);
   }
 
@@ -59,13 +58,40 @@ const upsertProfile = async (user) => {
     return mapProfile(existingUser);
   }
 
-  // If not, insert a new record
+  // Check if a profile with the same email already exists
+  if (user.email) {
+    const { data: userByEmail } = await supabase
+      .from('users')
+      .select('*')
+      .eq('email', user.email.toLowerCase())
+      .single();
+
+    if (userByEmail) {
+      // Try to update the existing record's ID to match the new authenticated user's ID
+      const { data: updatedUser, error: updateError } = await supabase
+        .from('users')
+        .update({ id: user.id })
+        .eq('email', user.email.toLowerCase())
+        .select()
+        .single();
+
+      if (!updateError && updatedUser) {
+        return mapProfile(updatedUser);
+      } else {
+        console.warn('[GlobeTrotter] Failed to update user ID by email, deleting conflicting legacy user profile:', updateError);
+        // Delete conflicting old user record so we can insert the new one
+        await supabase.from('users').delete().eq('email', user.email.toLowerCase());
+      }
+    }
+  }
+
+  // If not found or legacy record cleared, insert a new record
   const { data, error } = await supabase
     .from('users')
     .insert({
       id: user.id,
       name: fullName || user.user_metadata?.full_name || user.email?.split('@')[0] || 'Traveller',
-      email: user.email || '',
+      email: user.email?.toLowerCase() || '',
       password: '', // placeholder — auth handled by Supabase Auth
       profile_image: avatar || null,
     })
@@ -94,8 +120,13 @@ export const AuthProvider = ({ children }) => {
       setSession(s);
       setUser(s?.user ?? null);
       if (s?.user) {
+        if (s?.access_token) {
+          localStorage.setItem('token', s.access_token);
+        }
         const p = await upsertProfile(s.user);
         setProfile(p);
+      } else {
+        localStorage.removeItem('token');
       }
       setLoading(false);
       initDone.current = true;
@@ -111,10 +142,14 @@ export const AuthProvider = ({ children }) => {
         setUser(s?.user ?? null);
 
         if (s?.user) {
+          if (s?.access_token) {
+            localStorage.setItem('token', s.access_token);
+          }
           const p = await upsertProfile(s.user);
           setProfile(p);
         } else {
           setProfile(null);
+          localStorage.removeItem('token');
         }
         setLoading(false);
       }
