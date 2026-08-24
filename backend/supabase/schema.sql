@@ -140,6 +140,9 @@ ALTER TABLE public.expenses ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Public profiles are viewable by everyone" 
   ON public.users FOR SELECT USING (true);
 
+CREATE POLICY "Users can insert their own profile"
+  ON public.users FOR INSERT WITH CHECK (auth.uid() = id);
+
 CREATE POLICY "Users can update their own profile" 
   ON public.users FOR UPDATE USING (auth.uid() = id);
 
